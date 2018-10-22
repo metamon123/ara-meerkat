@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, NoAlertPresentException
 import getpass
 from time import sleep
 
@@ -32,11 +32,26 @@ def login(driver, id, pw):
     pw_field = driver.find_element_by_id("araPw")
     button = driver.find_element_by_id("signinSubmit")
 
+    id_field.clear()
+    pw_field.clear()
+
     id_field.send_keys(id)
     pw_field.send_keys(pw)
 
     button.click()
     sleep(0.5)
+    try:
+        alert_box = driver.switch_to_alert()
+        alert_text = alert_box.text.lower()
+        alert_box.accept()
+        if "fail" in alert_text:
+            return False
+        else:
+            # weird case
+            print ("[Warning] new alert text : " + alert_text)
+            return False
+    except NoAlertPresentException:
+        return True
 
 # if error -> return (None, None, None) / good -> return (good_num, bad_num, read_num)
 def parse_rec(recField): # recField = <td class="recRead"><span class="rec">+8 -0</span> / 350</td>
@@ -44,7 +59,7 @@ def parse_rec(recField): # recField = <td class="recRead"><span class="rec">+8 -
     lst = text.split() # ["+8", "-0", "/", "350"]
     if len(lst) != 4:
         return (None, None, None)
-    return (int(lst[0]), int(lst[1]), int(lst[3]))
+    return (int(lst[0]), -int(lst[1]), int(lst[3]))
 
 def search_word(driver, word, maxpage=1):
     '''
@@ -77,7 +92,8 @@ def search_word(driver, word, maxpage=1):
             date_field = content_row.find_element_by_css_selector(".date")
 
             post = dict()
-            post["title"] = title_field.get_property("innerText") # 
+            #post["title"] = title_field.text # It sometimes includes reply count ("title [2]", "bicycle [1]"...)
+            post["title"] = driver.execute_script("return arguments[0].childNodes[0].nodeValue.trim()", title_field) # Only contains title (no reply count)
             post["url"] = title_field.get_attribute("href") # /all/12345/?page_no=2
             gn, bn, rn = parse_rec(recommend_field)
             if gn == None or bn == None or rn == None:
@@ -89,19 +105,20 @@ def search_word(driver, word, maxpage=1):
 
             result_list.append(post)
 
-    print ("results : ")
-    print (result_list)
-    print ("-" * 100)
+    return result_list
+
+while not login(d, login_id, login_pw):
+    print ("login failed")
+    login_id = input("id : ").strip()
+    login_pw = getpass.getpass("pw : ").strip()
 
 
+result_list = search_word(d, keyword)
 
-login(d, login_id, login_pw)
-search_word(d, keyword)
+print ("results : ")
+print (result_list)
+print ("-" * 100)
 
-
-
-print ("[Cookie]")
-print (d.get_cookies())
 
 input("type enter to quit")
 d.quit()
