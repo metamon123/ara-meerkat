@@ -5,123 +5,217 @@ from selenium.common.exceptions import NoSuchElementException, NoAlertPresentExc
 import getpass
 from time import sleep
 
+import sqlite3
+from db_config import dbname, tablename
 
-def print_response(resp):
-    print ("status : {}".format(response.status_code))
-    print ("cookies : ", response.cookies)
-    print ("text : \n", response.text)
-    print ("-" * 100)
+# dbname = "./storage/mydb"
+# tablename = "records"
 
-base_url = "./"
-storage_url = base_url + "storage/" # contents will be stored in server directory OR database.
+class ara_crawler(object):
+    url = "https://ara.kaist.ac.kr"
 
-keyword = input("keyword : ").strip()
-login_id = input("id : ").strip()
-login_pw = getpass.getpass("pw : ").strip()
+    def __init__(self):
+        self.success = False
+        chrome_options = Options()
+        #chrome_options.add_argument("--headless")
 
-main_url = "https://ara.kaist.ac.kr"
-chrome_options = Options()
-#chrome_options.add_argument("--headless")
+        self.driver = webdriver.Chrome('chromedriver', chrome_options=chrome_options)
+        self.driver.implicitly_wait(10)
+        self.driver.get(self.url)
 
-d = webdriver.Chrome('chromedriver', chrome_options=chrome_options)
-d.implicitly_wait(10)
-d.get(main_url)
+        self.get_keywords()
+        self.login()
+        self.db_init()
 
-def login(driver, id, pw):
-    id_field = driver.find_element_by_id("araId")
-    pw_field = driver.find_element_by_id("araPw")
-    button = driver.find_element_by_id("signinSubmit")
 
-    id_field.clear()
-    pw_field.clear()
+    def db_init(self):
+        self.db = sqlite3.connect(dbname)
 
-    id_field.send_keys(id)
-    pw_field.send_keys(pw)
+    def login(self):
+        self.id = input("id : ").strip()
+        self.pw = getpass.getpass("pw : ").strip()
 
-    button.click()
-    sleep(0.5)
-    try:
-        alert_box = driver.switch_to_alert()
-        alert_text = alert_box.text.lower()
-        alert_box.accept()
-        if "fail" in alert_text:
-            return False
-        else:
-            # weird case
-            print ("[Warning] new alert text : " + alert_text)
-            return False
-    except NoAlertPresentException:
-        return True
+        while not self.try_login(self.id, self.pw):
+            print ("login failed")
+            self.id = input("id : ").strip()
+            self.pw = getpass.getpass("pw : ").strip()
 
-# if error -> return (None, None, None) / good -> return (good_num, bad_num, read_num)
-def parse_rec(recField): # recField = <td class="recRead"><span class="rec">+8 -0</span> / 350</td>
-    text = recField.get_property("innerText") # "+8 -0 / 350"
-    lst = text.split() # ["+8", "-0", "/", "350"]
-    if len(lst) != 4:
-        return (None, None, None)
-    return (int(lst[0]), -int(lst[1]), int(lst[3]))
+    def try_login(self, id, pw):
+        id_field = self.driver.find_element_by_id("araId")
+        pw_field = self.driver.find_element_by_id("araPw")
+        button = self.driver.find_element_by_id("signinSubmit")
 
-def search_word(driver, word, maxpage=1):
-    '''
-    if not driver.current_url.startswith(main_url + "/all"):
-        driver.get(main_url + "/all")
+        id_field.clear()
+        pw_field.clear()
+
+        id_field.send_keys(id)
+        pw_field.send_keys(pw)
+
+        button.click()
         sleep(0.5)
-    search_word_field = driver.find_element_by_id("searchText")
-    search_button = driver.find_element_by_id("searchButton")
+        try:
+            alert_box = self.driver.switch_to_alert()
+            alert_text = alert_box.text.lower()
+            alert_box.accept()
+            if "fail" in alert_text:
+                return False
+            else:
+                # weird case
+                print ("[Warning] new alert text : " + alert_text)
+                return False
+        except NoAlertPresentException:
+            return True
 
-    search_word_field.send_keys(word)
-    search_button.click()
-    # -> can be replaced with GET https://ara.kaist.ac.kr/all/search/?search_word={}&chosen_search_method=title|content|author_nickname|author_username&page_no={}
-    '''
+    def get_keywords(self, test=False):
+        if test:
+            self.keywords = ["알바"]
+        else:
+            self.keywords = [input("keyword : ").strip()]
 
-    search_url = "https://ara.kaist.ac.kr/all/search/?search_word={}&chosen_search_method=title|content|author_nickname|author_username&page_no={}"
-    selector = "#board_content > table > tbody > tr:nth-child({})" # #board_content > table > tbody > tr:nth-child(2)
-    result_list = []
-    for page in range(1, maxpage + 1):
-        driver.get(search_url.format(word, page))
-        row = 0
-        while 1:
-            row += 1
-            try:
-                content_row = driver.find_element_by_css_selector(selector.format(row))
-            except NoSuchElementException:
-                break
+    # if error -> return (None, None, None) / good -> return (good_num, bad_num, read_num)
+    def parse_rec(self, recField): # recField = <td class="recRead"><span class="rec">+8 -0</span> / 350</td>
+        text = recField.get_property("innerText") # "+8 -0 / 350"
+        lst = text.split() # ["+8", "-0", "/", "350"]
+        if len(lst) != 4:
+            return (None, None, None)
+        return (int(lst[0]), -int(lst[1]), int(lst[3]))
 
-            title_field = content_row.find_element_by_css_selector(".title > a")
-            recommend_field = content_row.find_element_by_css_selector(".recRead")
-            date_field = content_row.find_element_by_css_selector(".date")
+    def search_word(self, word, maxpage=1):
+        search_url = "https://ara.kaist.ac.kr/all/search/?search_word={}&chosen_search_method=title|content|author_nickname|author_username&page_no={}"
+        selector = "#board_content > table > tbody > tr:nth-child({})" # #board_content > table > tbody > tr:nth-child(2)
+        posts = []
+        for page in range(1, maxpage + 1):
+            self.driver.get(search_url.format(word, page))
+            row = 0
+            while 1:
+                row += 1
+                try:
+                    content_row = self.driver.find_element_by_css_selector(selector.format(row))
+                except NoSuchElementException:
+                    break
 
-            post = dict()
-            #post["title"] = title_field.text # It sometimes includes reply count ("title [2]", "bicycle [1]"...)
-            post["title"] = driver.execute_script("return arguments[0].childNodes[0].nodeValue.trim()", title_field) # Only contains title (no reply count)
-            post["url"] = title_field.get_attribute("href") # /all/12345/?page_no=2
-            gn, bn, rn = parse_rec(recommend_field)
-            if gn == None or bn == None or rn == None:
-                continue
-            post["good_num"] = gn
-            post["bad_num"] = bn
-            post["read_num"] = rn
-            post["date"] = date_field.get_property("innerText") # "2018/08/27"
+                aid_field = content_row.find_element_by_css_selector("td.articleid.hidden")
+                title_field = content_row.find_element_by_css_selector(".title > a")
+                recommend_field = content_row.find_element_by_css_selector(".recRead")
+                date_field = content_row.find_element_by_css_selector(".date")
 
-            result_list.append(post)
+                post = dict()
+                post["article_id"] = int(aid_field.get_attribute("rel"))
+                post["deleted"] = True if "deleted" in content_row.get_attribute("class") else False
+                post["keyword"] = word
+                post["title"] = self.driver.execute_script("return arguments[0].childNodes[0].nodeValue.trim()", title_field) # Only contains title (no reply count)
+                post["url"] = title_field.get_attribute("href") # /all/12345/?page_no=2
+                gn, bn, rn = self.parse_rec(recommend_field)
+                if gn == None or bn == None or rn == None:
+                    continue
+                post["good_num"] = gn
+                post["bad_num"] = bn
+                post["read_num"] = rn
+                post["date"] = date_field.get_property("innerText") # "2018/08/27"
 
-    return result_list
+                posts.append(post)
 
-while not login(d, login_id, login_pw):
-    print ("login failed")
-    login_id = input("id : ").strip()
-    login_pw = getpass.getpass("pw : ").strip()
+        return posts
+
+    def crawl(self):
+        results = []
+        for keyword in self.keywords:
+            print(f"searching {{{keyword}}}...")
+            posts = self.search_word (keyword, maxpage=2)
+            print("search ended")
+
+            new_posts = []
+            cursor = self.db.cursor()
+
+            for post in posts:
+                if post["deleted"]:
+                    # delete from db || record the fact that post is deleted || neglect
+                    continue
+
+                cursor.execute(f'''
+                    select * from {tablename} where keyword=? and article_id=?
+                ''', (post["keyword"], post["article_id"]))
+
+                not_found = True
+                for row in cursor:
+                    not_found = False
+                    cursor.execute(f'''update {tablename} set title=?, url=?, good_num=?,
+                        bad_num=?, read_num=?, date=? where keyword=? and article_id=?''', 
+                        (
+                            post["title"],
+                            post["url"],
+                            post["good_num"],
+                            post["bad_num"],
+                            post["read_num"],
+                            post["date"],
+                            post["keyword"],
+                            post["article_id"]
+                        )
+                    )
+
+                if not_found:
+                    # new data
+                    print(f"keyword {post['keyword']} new data!")
+                    print(post["title"])
+                    new_posts.append(post)
+                    cursor.execute(f'''
+                        insert into {tablename}(article_id, keyword, title, url, good_num, bad_num, read_num, date)
+                        values(?, ?, ?, ?, ?, ?, ?, ?)''',
+                        (
+                            post["article_id"],
+                            post["keyword"],
+                            post["title"],
+                            post["url"],
+                            post["good_num"],
+                            post["bad_num"],
+                            post["read_num"],
+                            post["date"]
+                        )
+                    )
+            results.append({"keyword" : keyword, "new_posts" : new_posts})
+        self.success = True
+        return results
 
 
-result_list = search_word(d, keyword)
+    def bye(self):
+        # TODO: should be modified (wanna user __del__..)
+        if hasattr(self, 'driver'):
+            self.driver.quit()
+        if hasattr(self, 'db'):
+            if self.success:
+                print("committing to db...")
+                self.db.commit()
+            else:
+                self.db.rollback()
+            self.db.close()
+        print("bye :)")
+        #super().__del__()
 
-print ("results : ")
-print (result_list)
-print ("-" * 100)
+def summary(new_results):
+    final_summaries = [] # "keyword : 3 new items, ..."
+    for result in new_results:
+        keyword = result["keyword"]
+        new_posts = result["new_posts"]
+        print('-'*100)
+        print(f"New posts about keyword {{{keyword}}}")
+        for post in new_posts:
+            print("\t" + f"{post['title']}")
+            print("\t" + f"{post['good_num']}/{post['bad_num']}/{post['read_num']} {post['date']}")
+        print('-'*100)
+        final_summaries.append(f"{{ {keyword} }} : {len(new_posts)} new item!")
+    print('\n'.join(final_summaries))
+
+if __name__ == "__main__":
+    crawler = ara_crawler()
+    results = crawler.crawl()
+    summary(results)
+    input("type enter to quit")
+    crawler.bye()
 
 
-input("type enter to quit")
-d.quit()
+
+
+
 
 
 
