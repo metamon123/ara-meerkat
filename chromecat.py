@@ -2,11 +2,13 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException, NoAlertPresentException
-import getpass
+from getpass import getpass
 from time import sleep
 
-import sqlite3
+import sqlite3, sys
 from db_config import dbname, tablename
+from slackcat import meerkat
+from config import login_id, login_pw, dp_email
 
 # dbname = "./storage/mydb"
 # tablename = "records"
@@ -14,31 +16,38 @@ from db_config import dbname, tablename
 class ara_crawler(object):
     url = "https://ara.kaist.ac.kr"
 
-    def __init__(self):
+    def __init__(self, autologin=True):
         self.success = False
         chrome_options = Options()
-        #chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--headless")
 
         self.driver = webdriver.Chrome('chromedriver', chrome_options=chrome_options)
         self.driver.implicitly_wait(10)
         self.driver.get(self.url)
 
         self.get_keywords()
-        self.login()
+        self.login(autologin)
         self.db_init()
 
 
     def db_init(self):
         self.db = sqlite3.connect(dbname)
 
-    def login(self):
-        self.id = input("id : ").strip()
-        self.pw = getpass.getpass("pw : ").strip()
+    def login(self, autologin):
+        if autologin:
+            self.id = login_id
+            self.pw = login_pw
+        else:
+            self.id = input("id : ").strip()
+            self.pw = getpass("pw : ").strip()
 
         while not self.try_login(self.id, self.pw):
+            if autologin:
+                print("autologin failed!")
+                self.bye(-1)
             print ("login failed")
             self.id = input("id : ").strip()
-            self.pw = getpass.getpass("pw : ").strip()
+            self.pw = getpass("pw : ").strip()
 
     def try_login(self, id, pw):
         id_field = self.driver.find_element_by_id("araId")
@@ -117,11 +126,11 @@ class ara_crawler(object):
 
         return posts
 
-    def crawl(self):
+    def crawl(self, maxpage=2):
         results = []
         for keyword in self.keywords:
             print(f"searching {{{keyword}}}...")
-            posts = self.search_word (keyword, maxpage=2)
+            posts = self.search_word (keyword, maxpage)
             print("search ended")
 
             new_posts = []
@@ -177,7 +186,7 @@ class ara_crawler(object):
         return results
 
 
-    def bye(self):
+    def bye(self, status):
         # TODO: should be modified (wanna use __del__..)
         if hasattr(self, 'driver'):
             self.driver.quit()
@@ -189,28 +198,48 @@ class ara_crawler(object):
                 self.db.rollback()
             self.db.close()
         print("bye :)")
+        sys.exit(status)
         #super().__del__()
 
-def summary(new_results):
-    final_summaries = [] # "keyword : 3 new items, ..."
+def summary(new_results, dm_email=""):
+    final_summaries = [] # "keyword : 3 new posts, ..."
+    if dm_email != "":
+        cat = meerkat()
+
     for result in new_results:
         keyword = result["keyword"]
         new_posts = result["new_posts"]
+        texts = []
         print('-'*100)
         print(f"New posts about keyword {{{keyword}}}")
         for post in new_posts:
-            print("\t" + f"{post['title']}")
-            print("\t" + f"{post['good_num']}/{post['bad_num']}/{post['read_num']} {post['date']}")
+            print("\t" + post['title'])
+            print("\t" + f"{ post['good_num'] }/{ post['bad_num'] }/{ post['read_num'] } { post['date'] }")
+
+            if dm_email != "":
+                texts.append(f"{ post['title'] }\ngood:{ post['good_num'] } / bad:{ post['bad_num'] }\t{ post['date'] }")
+
         print('-'*100)
-        final_summaries.append(f"{{ {keyword} }} : {len(new_posts)} new item!")
+        final_summaries.append(f"keyword {{ {keyword} }} : {len(new_posts)} new posts!")
+
+        if dm_email != "":
+            msg_attachment = dict()
+            msg_attachment["pretext"] = f"keyword {{ {keyword} }} : {len(new_posts)} new posts!"
+            msg_attachment["text"] = '\n\n'.join(texts)
+            success = cat.send_dm_by_email(dm_email, attachments=[msg_attachment])
+            if success:
+                print(f"Notified result to {dm_email}")
+            else:
+                print(f"Failed to notify result to {dm_email}")
+
     print('\n'.join(final_summaries))
 
 if __name__ == "__main__":
     crawler = ara_crawler()
-    results = crawler.crawl()
-    summary(results)
+    results = crawler.crawl(maxpage=1)
+    summary(results, dm_email=dp_email)
     input("type enter to quit")
-    crawler.bye()
+    crawler.bye(0)
 
 
 
