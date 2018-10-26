@@ -178,7 +178,7 @@ class ara_crawler(object):
 
 
     def bye(self):
-        # TODO: should be modified (wanna user __del__..)
+        # TODO: should be modified (wanna use __del__..)
         if hasattr(self, 'driver'):
             self.driver.quit()
         if hasattr(self, 'db'):
