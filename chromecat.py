@@ -25,7 +25,7 @@ class ara_crawler(object):
         chrome_options.add_argument("--headless")
 
         self.driver = webdriver.Chrome('chromedriver', chrome_options=chrome_options)
-        self.driver.implicitly_wait(10)
+        self.driver.implicitly_wait(3)
         self.driver.get(self.url)
 
         self.keywords = keywords
@@ -64,7 +64,7 @@ class ara_crawler(object):
         pw_field.send_keys(pw)
 
         button.click()
-        sleep(0.5)
+        sleep(0.2)
         try:
             alert_box = self.driver.switch_to_alert()
             alert_text = alert_box.text.lower()

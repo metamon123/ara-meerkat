@@ -1,5 +1,5 @@
 from slacker import Slacker
-from config import bot_token, dp_email
+from config import bot_token
 from threading import Thread
 import websockets
 import asyncio
@@ -89,7 +89,6 @@ class meerkat(object):
 
 
 if __name__ == "__main__":
-    # test for slack api
     cat = meerkat()
     
     loop = asyncio.new_event_loop()
