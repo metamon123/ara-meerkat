@@ -1,4 +1,4 @@
-config.py
+secret.py
 __pycache__
 storage/*
 static/*
