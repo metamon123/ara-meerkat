@@ -34,7 +34,7 @@ class meerkat(object):
         return ""
 
     def send_dm_by_email(self, email, text=None, attachments=None):
-        return self.send_dm_by_uid(self.get_userid_by_email(email))
+        return self.send_dm_by_uid(self.get_userid_by_email(email), text, attachments)
 
     def send_dm_by_uid(self, uid, text=None, attachments=None):
         if uid == "":
@@ -76,17 +76,16 @@ class meerkat(object):
                     self.slack.im.open(uid)
                     self.slack.chat.post_message(self.get_imid_by_uid(uid), text=wrong_search_msg, attachments=None, as_user=True)
                 else:
-                    t = Thread(target=search_and_report, args=(msg_tokens[1:], "", uid, ))
+                    t = Thread(target=search_and_report, args=(msg_tokens[1:], self, "", uid, ))
                     t.start()
                     self.slack.im.open(uid)
                     self.slack.chat.post_message(self.get_imid_by_uid(uid), text=f"Searching {msg_tokens[1:]!s}", attachments=None, as_user=True)
             elif msg_tokens[0] == "!구독":
                 pass
             elif msg_tokens[0] == "!도움":
-                slack_cmd_usage = '''!도움\n!검색 맥북 프로\n=> "맥북 프로" 검색 (멀티 검색 없음)\n!구독 알바 (미구현)\n=> "알바" 검색 결과 주기적으로 체크, 새로운 글 등록 시 슬랙 메시지'''
+                slack_cmd_usage = '''!도움\n!검색 맥북\n=> "맥북" 검색 \n!구독 알바 (미구현)\n=> "알바" 검색 결과 주기적으로 체크, 새로운 글 등록 시 슬랙 메시지'''
                 self.slack.im.open(uid)
                 self.slack.chat.post_message(self.get_imid_by_uid(uid), text=slack_cmd_usage, attachments=None, as_user=True)
-
 
 if __name__ == "__main__":
     cat = meerkat()

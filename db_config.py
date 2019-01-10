@@ -9,7 +9,8 @@ cursor.execute(f'''
     create table if not exists {tablename}
     (
         id integer primary key,
-        article_id integer unique,
+        uid text,
+        article_id integer,
         keyword text,
         title text,
         url text,

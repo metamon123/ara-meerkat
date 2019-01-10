@@ -19,7 +19,7 @@ def usage():
 class ara_crawler(object):
     url = "https://ara.kaist.ac.kr/"
 
-    def __init__(self, keywords=["알바"], autologin=True):
+    def __init__(self, keywords=["알바"], uid="", autologin=True):
         self.success = False
         chrome_options = Options()
         chrome_options.add_argument("--headless")
@@ -29,6 +29,7 @@ class ara_crawler(object):
         self.driver.get(self.url)
 
         self.keywords = keywords
+        self.uid = uid
         self.login(autologin)
         self.db_init()
 
@@ -138,15 +139,16 @@ class ara_crawler(object):
                     # delete from db || record the fact that post is deleted || neglect
                     continue
 
+                # storage can be saved if I change db schema with foreign key or something...
                 cursor.execute(f'''
-                    select * from {tablename} where keyword=? and article_id=?
-                ''', (post["keyword"], post["article_id"]))
+                    select * from {tablename} where keyword=? and article_id=? and uid=?
+                ''', (post["keyword"], post["article_id"], self.uid))
 
                 not_found = True
                 for row in cursor:
                     not_found = False
                     cursor.execute(f'''update {tablename} set title=?, url=?, good_num=?,
-                        bad_num=?, read_num=?, date=? where keyword=? and article_id=?''', 
+                        bad_num=?, read_num=?, date=? where keyword=? and article_id=? and uid=?''', 
                         (
                             post["title"],
                             post["url"],
@@ -155,7 +157,8 @@ class ara_crawler(object):
                             post["read_num"],
                             post["date"],
                             post["keyword"],
-                            post["article_id"]
+                            post["article_id"],
+                            self.uid
                         )
                     )
 
@@ -165,9 +168,10 @@ class ara_crawler(object):
                     print(post["title"])
                     new_posts.append(post)
                     cursor.execute(f'''
-                        insert into {tablename}(article_id, keyword, title, url, good_num, bad_num, read_num, date)
-                        values(?, ?, ?, ?, ?, ?, ?, ?)''',
+                        insert into {tablename}(uid, article_id, keyword, title, url, good_num, bad_num, read_num, date)
+                        values(?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                         (
+                            self.uid,
                             post["article_id"],
                             post["keyword"],
                             post["title"],
@@ -197,7 +201,7 @@ class ara_crawler(object):
         print("bye :)")
         #super().__del__()
 
-def send_summary(new_results, dm_email="", dm_uid=""):
+def send_summary(new_results, slackcat=None, dm_email="", dm_uid=""):
     final_summaries = [] # "keyword : 3 new posts, ..."
     if dm_uid != "":
         dm_type = "uid"
@@ -206,13 +210,15 @@ def send_summary(new_results, dm_email="", dm_uid=""):
     else:
         dm_type = "none"
 
-    if dm_type != "none":
+    if dm_type != "none" and slackcat == None:
         from slackcat import meerkat
         slackcat = meerkat()
 
     for result in new_results:
         keyword = result["keyword"]
         new_posts = result["new_posts"]
+        if len(new_posts) == 0:
+            continue
         texts = []
         print('-'*100)
         print(f"New posts about keyword {{{keyword}}}")
@@ -234,7 +240,7 @@ def send_summary(new_results, dm_email="", dm_uid=""):
             if dm_type == "uid":
                 success = slackcat.send_dm_by_uid(dm_uid, attachments=[msg_attachment])
             elif dm_type == "email":
-                success = slackcat.send_dm_by_email(dm_email, attachments[msg_attachment])
+                success = slackcat.send_dm_by_email(dm_email, attachments=[msg_attachment])
             else:
                 assert "Wrong situation" == None
 
@@ -245,10 +251,10 @@ def send_summary(new_results, dm_email="", dm_uid=""):
 
     print('\n'.join(final_summaries))
 
-def search_and_report(keywords, dm_email="", dm_uid=""):
-    crawler = ara_crawler(keywords=keywords)
+def search_and_report(keywords, slackcat=None, dm_email="", dm_uid=""):
+    crawler = ara_crawler(keywords=keywords, uid=dm_uid)
     results = crawler.crawl(maxpage=1)
-    send_summary(results, dm_email=dm_email, dm_uid=dm_uid)
+    send_summary(results, slackcat=slackcat, dm_email=dm_email, dm_uid=dm_uid)
     crawler.bye()
 
 if __name__ == "__main__":
