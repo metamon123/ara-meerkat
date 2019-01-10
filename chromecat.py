@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#!/usr/bin/env python3
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException, NoAlertPresentException
@@ -7,16 +7,19 @@ from time import sleep
 
 import sqlite3, sys
 from db_config import dbname, tablename
-from slackcat import meerkat
 from config import login_id, login_pw, dp_email
 
 # dbname = "./storage/mydb"
 # tablename = "records"
 
-class ara_crawler(object):
-    url = "https://ara.kaist.ac.kr"
+def usage():
+    print('Usage: python3 chromecat.py word_to_search1 word_to_search2')
+    print('ex) python3 chromecat.py 개발 알바 "맥북  프로"')
 
-    def __init__(self, autologin=True):
+class ara_crawler(object):
+    url = "https://ara.kaist.ac.kr/"
+
+    def __init__(self, keywords=["알바"], autologin=True):
         self.success = False
         chrome_options = Options()
         chrome_options.add_argument("--headless")
@@ -25,7 +28,7 @@ class ara_crawler(object):
         self.driver.implicitly_wait(10)
         self.driver.get(self.url)
 
-        self.get_keywords()
+        self.keywords = keywords
         self.login(autologin)
         self.db_init()
 
@@ -74,12 +77,6 @@ class ara_crawler(object):
                 return False
         except NoAlertPresentException:
             return True
-
-    def get_keywords(self, test=False):
-        if test:
-            self.keywords = ["알바"]
-        else:
-            self.keywords = [input("keyword : ").strip()]
 
     # if error -> return (None, None, None) / good -> return (good_num, bad_num, read_num)
     def parse_rec(self, recField): # recField = <td class="recRead"><span class="rec">+8 -0</span> / 350</td>
@@ -186,7 +183,7 @@ class ara_crawler(object):
         return results
 
 
-    def bye(self, status):
+    def bye(self):
         # TODO: should be modified (wanna use __del__..)
         if hasattr(self, 'driver'):
             self.driver.quit()
@@ -198,13 +195,20 @@ class ara_crawler(object):
                 self.db.rollback()
             self.db.close()
         print("bye :)")
-        sys.exit(status)
         #super().__del__()
 
-def summary(new_results, dm_email=""):
+def send_summary(new_results, dm_email="", dm_uid=""):
     final_summaries = [] # "keyword : 3 new posts, ..."
-    if dm_email != "":
-        cat = meerkat()
+    if dm_uid != "":
+        dm_type = "uid"
+    elif dm_email != "":
+        dm_type = "email"
+    else:
+        dm_type = "none"
+
+    if dm_type != "none":
+        from slackcat import meerkat
+        slackcat = meerkat()
 
     for result in new_results:
         keyword = result["keyword"]
@@ -217,30 +221,42 @@ def summary(new_results, dm_email=""):
             print("\t" + f"{ post['good_num'] }/{ post['bad_num'] }/{ post['read_num'] } { post['date'] }")
 
             if dm_email != "":
-                texts.append(f"{ post['title'] }\ngood:{ post['good_num'] } / bad:{ post['bad_num'] }\t{ post['date'] }")
+                texts.append(f"{ post['title'] }\ngood:{ post['good_num'] } / bad:{ post['bad_num'] }\t{ post['date'] }\n{ post['url'] }")
 
         print('-'*100)
         final_summaries.append(f"keyword {{ {keyword} }} : {len(new_posts)} new posts!")
 
-        if dm_email != "":
+        if dm_type != "none":
             msg_attachment = dict()
             msg_attachment["pretext"] = f"keyword {{ {keyword} }} : {len(new_posts)} new posts!"
             msg_attachment["text"] = '\n\n'.join(texts)
-            success = cat.send_dm_by_email(dm_email, attachments=[msg_attachment])
-            if success:
-                print(f"Notified result to {dm_email}")
+            
+            if dm_type == "uid":
+                success = slackcat.send_dm_by_uid(dm_uid, attachments=[msg_attachment])
+            elif dm_type == "email":
+                success = slackcat.send_dm_by_email(dm_email, attachments[msg_attachment])
             else:
-                print(f"Failed to notify result to {dm_email}")
+                assert "Wrong situation" == None
+
+            if success:
+                print(f"Notified result successfully")
+            else:
+                print(f"Failed to notify result")
 
     print('\n'.join(final_summaries))
 
-if __name__ == "__main__":
-    crawler = ara_crawler()
+def search_and_report(keywords, dm_email="", dm_uid=""):
+    crawler = ara_crawler(keywords=keywords)
     results = crawler.crawl(maxpage=1)
-    summary(results, dm_email=dp_email)
-    input("type enter to quit")
-    crawler.bye(0)
+    send_summary(results, dm_email=dm_email, dm_uid=dm_uid)
+    crawler.bye()
 
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        usage()
+    else:
+        keywords = sys.argv[1:]
+        search_and_report(keywords, dm_email=dp_email)
 
 
 
